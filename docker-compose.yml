@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  sms-server:
+    build: .
+    container_name: sms-server
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+      - ./data:/app/data
+    env_file:
+      - .env

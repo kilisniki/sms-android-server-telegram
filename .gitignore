@@ -1,0 +1,16 @@
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Database
+data/
+*.db
+*.sqlite
+
+# Go compiled binaries
+sms-server
+
+# OS files
+.DS_Store
+Thumbs.db
