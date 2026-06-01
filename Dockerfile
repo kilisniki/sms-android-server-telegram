@@ -10,6 +10,9 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /app/sms-server ./cmd/server/main.go
 FROM alpine:latest
 RUN apk add --no-cache android-tools tzdata
 
+# Fix libusb assertion failure in Alpine's adb by forcing native USB backend
+ENV ADB_LIBUSB=0
+
 WORKDIR /app
 COPY --from=builder /app/sms-server .
 
