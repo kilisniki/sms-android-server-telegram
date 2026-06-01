@@ -41,9 +41,18 @@ func main() {
 	adbClient := adb.NewClient()
 	adbClient.StartServer() // Start ADB daemon eagerly to avoid race conditions
 
+	// SIM slot name mapping from .env
+	simNames := map[string]string{}
+	if name := os.Getenv("SIM1_NAME"); name != "" {
+		simNames["1"] = name
+	}
+	if name := os.Getenv("SIM2_NAME"); name != "" {
+		simNames["2"] = name
+	}
+
 	telegramBot := bot.New(botToken, chatID)
 
-	poller := worker.New(adbClient, database, telegramBot, time.Duration(pollIntervalSec)*time.Second)
+	poller := worker.New(adbClient, database, telegramBot, time.Duration(pollIntervalSec)*time.Second, simNames)
 
 	log.Println("Starting SMS Android Server...")
 	go poller.Start()

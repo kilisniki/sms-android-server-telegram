@@ -140,11 +140,17 @@ func (c *Client) runAdbShell(shellCmd string) (string, error) {
 }
 
 func (c *Client) QuerySMS() ([]SMS, error) {
-	// Use only columns that are guaranteed to exist on all Android versions.
-	// subscription_id does NOT exist on many devices.
-	output, err := c.runAdbShell("content query --uri content://sms/inbox --projection _id:address:body:date --sort \"date DESC\"")
+	// body MUST be last — it can contain commas and equals signs.
+	// Try with sub_id first (SIM slot info), fall back without it.
+	output, err := c.runAdbShell("content query --uri content://sms/inbox --projection _id:address:date:sub_id:body --sort \"date DESC\"")
+	hasSubID := true
 	if err != nil {
-		return nil, err
+		// sub_id might not exist on some devices, retry without it
+		output, err = c.runAdbShell("content query --uri content://sms/inbox --projection _id:address:date:body --sort \"date DESC\"")
+		hasSubID = false
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var messages []SMS
@@ -162,6 +168,9 @@ func (c *Client) QuerySMS() ([]SMS, error) {
 			Address: parsed["address"],
 			Date:    parsed["date"],
 			Body:    parsed["body"],
+		}
+		if hasSubID {
+			sms.SubID = parsed["sub_id"]
 		}
 
 		if sms.ID != "" {
@@ -183,10 +192,15 @@ type Call struct {
 
 func (c *Client) QueryCalls() ([]Call, error) {
 	// Call types: 1 = Incoming, 2 = Outgoing, 3 = Missed, 4 = Voicemail, 5 = Rejected, 6 = Blocked
-	// Don't include subscription_id — may not exist on all devices.
-	output, err := c.runAdbShell("content query --uri content://call_log/calls --projection _id:number:type:date:duration --sort \"date DESC\"")
+	// Try with sub_id first, fall back without it.
+	output, err := c.runAdbShell("content query --uri content://call_log/calls --projection _id:number:type:date:duration:sub_id --sort \"date DESC\"")
+	hasSubID := true
 	if err != nil {
-		return nil, err
+		output, err = c.runAdbShell("content query --uri content://call_log/calls --projection _id:number:type:date:duration --sort \"date DESC\"")
+		hasSubID = false
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var calls []Call
@@ -205,6 +219,9 @@ func (c *Client) QueryCalls() ([]Call, error) {
 			Type:     parsed["type"],
 			Date:     parsed["date"],
 			Duration: parsed["duration"],
+		}
+		if hasSubID {
+			call.SubID = parsed["sub_id"]
 		}
 
 		if call.ID != "" {
