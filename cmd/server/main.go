@@ -38,16 +38,12 @@ func main() {
 		log.Fatalf("Failed to init database: %v", err)
 	}
 
-	simNames := map[string]string{
-		"0": os.Getenv("SIM1_NAME"), // Some Android versions use 0/1 instead of 1/2
-		"1": os.Getenv("SIM1_NAME"),
-		"2": os.Getenv("SIM2_NAME"),
-	}
-
 	adbClient := adb.NewClient()
+	adbClient.StartServer() // Start ADB daemon eagerly to avoid race conditions
+
 	telegramBot := bot.New(botToken, chatID)
 
-	poller := worker.New(adbClient, database, telegramBot, time.Duration(pollIntervalSec)*time.Second, simNames)
+	poller := worker.New(adbClient, database, telegramBot, time.Duration(pollIntervalSec)*time.Second)
 
 	log.Println("Starting SMS Android Server...")
 	go poller.Start()

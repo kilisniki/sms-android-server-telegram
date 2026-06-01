@@ -17,16 +17,14 @@ type Poller struct {
 	db        *db.DB
 	bot       *bot.Bot
 	interval  time.Duration
-	simNames  map[string]string
 }
 
-func New(adbClient *adb.Client, database *db.DB, telegramBot *bot.Bot, interval time.Duration, simNames map[string]string) *Poller {
+func New(adbClient *adb.Client, database *db.DB, telegramBot *bot.Bot, interval time.Duration) *Poller {
 	return &Poller{
 		adbClient: adbClient,
 		db:        database,
 		bot:       telegramBot,
 		interval:  interval,
-		simNames:  simNames,
 	}
 }
 
@@ -40,13 +38,6 @@ func parseDate(timestampMs string) string {
 	}
 	t := time.UnixMilli(ts)
 	return t.Format("02.01.2006 15:04:05")
-}
-
-func (p *Poller) getSimName(subID string) string {
-	if name, ok := p.simNames[subID]; ok && name != "" {
-		return name
-	}
-	return subID
 }
 
 func (p *Poller) Start() {
@@ -64,7 +55,9 @@ func (p *Poller) Start() {
 				if deviceOnline {
 					log.Println("Device connected")
 					p.bot.SendMessage("🔋 <b>Устройство подключено</b>")
-					p.poll() // Immediate poll on connect
+					// Give ADB time to fully stabilize the USB connection
+					time.Sleep(3 * time.Second)
+					p.poll()
 				} else {
 					log.Println("Device disconnected")
 					p.bot.SendMessage("🔌 <b>Устройство отключено</b>")
@@ -102,23 +95,18 @@ func (p *Poller) pollSMS() {
 		}
 
 		if !processed {
-			simInfo := ""
-			if msg.SubID != "" {
-				simInfo = fmt.Sprintf("\n<b>SIM:</b> %s", p.getSimName(msg.SubID))
-			}
-			
 			dateInfo := ""
 			if parsedDate := parseDate(msg.Date); parsedDate != "" {
 				dateInfo = fmt.Sprintf("\n<b>Время:</b> %s", parsedDate)
 			}
-			
-			// Try to handle HTML special characters to avoid Telegram API errors
-			body := strings.ReplaceAll(msg.Body, "<", "&lt;")
-			body = strings.ReplaceAll(body, ">", "&gt;")
-			body = strings.ReplaceAll(body, "&", "&amp;")
 
-			text := fmt.Sprintf("✉️ <b>Новое SMS!</b>\n<b>От:</b> %s%s%s\n\n%s", msg.Address, simInfo, dateInfo, body)
-			
+			// Escape HTML special characters to avoid Telegram API errors
+			body := strings.ReplaceAll(msg.Body, "&", "&amp;")
+			body = strings.ReplaceAll(body, "<", "&lt;")
+			body = strings.ReplaceAll(body, ">", "&gt;")
+
+			text := fmt.Sprintf("✉️ <b>Новое SMS!</b>\n<b>От:</b> %s%s\n\n%s", msg.Address, dateInfo, body)
+
 			if err := p.bot.SendMessage(text); err != nil {
 				log.Printf("Failed to send SMS to telegram: %v", err)
 				continue // Do not mark as processed if sending failed
@@ -154,11 +142,6 @@ func (p *Poller) pollCalls() {
 		}
 
 		if !processed {
-			simInfo := ""
-			if call.SubID != "" {
-				simInfo = fmt.Sprintf("\n<b>SIM:</b> %s", p.getSimName(call.SubID))
-			}
-
 			dateInfo := ""
 			if parsedDate := parseDate(call.Date); parsedDate != "" {
 				dateInfo = fmt.Sprintf("\n<b>Время:</b> %s", parsedDate)
@@ -166,9 +149,9 @@ func (p *Poller) pollCalls() {
 
 			var text string
 			if call.Type == "3" {
-				text = fmt.Sprintf("❌ <b>Пропущенный звонок</b>\n<b>От:</b> %s%s%s", call.Number, simInfo, dateInfo)
+				text = fmt.Sprintf("❌ <b>Пропущенный звонок</b>\n<b>От:</b> %s%s", call.Number, dateInfo)
 			} else {
-				text = fmt.Sprintf("📞 <b>Входящий звонок</b>\n<b>От:</b> %s\n<b>Длительность:</b> %s сек%s%s", call.Number, call.Duration, simInfo, dateInfo)
+				text = fmt.Sprintf("📞 <b>Входящий звонок</b>\n<b>От:</b> %s\n<b>Длительность:</b> %s сек%s", call.Number, call.Duration, dateInfo)
 			}
 
 			if err := p.bot.SendMessage(text); err != nil {
@@ -181,3 +164,4 @@ func (p *Poller) pollCalls() {
 		}
 	}
 }
+
