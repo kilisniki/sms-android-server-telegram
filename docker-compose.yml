@@ -2,10 +2,13 @@ version: '3.8'
 
 services:
   sms-server:
-    build: .
+    build: 
+      context: .
+      network: host
     container_name: sms-server
     restart: unless-stopped
     privileged: true
+    network_mode: host
     volumes:
       - /dev/bus/usb:/dev/bus/usb
       - ./data:/app/data
