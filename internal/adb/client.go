@@ -52,6 +52,41 @@ type SMS struct {
 	SubID   string
 }
 
+func parseContentRow(line string, lastKey string) map[string]string {
+	result := make(map[string]string)
+	
+	// Strip "Row: X "
+	firstEq := strings.Index(line, "=")
+	if firstEq != -1 {
+		spaceIdx := strings.LastIndex(line[:firstEq], " ")
+		if spaceIdx != -1 {
+			line = line[spaceIdx+1:]
+		}
+	}
+
+	var prefix string
+	if lastKey != "" {
+		lastIdx := strings.Index(line, ", "+lastKey+"=")
+		if lastIdx != -1 {
+			prefix = line[:lastIdx]
+			result[lastKey] = line[lastIdx+len(", "+lastKey+"="):]
+		} else {
+			prefix = line
+		}
+	} else {
+		prefix = line
+	}
+
+	parts := strings.Split(prefix, ", ")
+	for _, part := range parts {
+		kv := strings.SplitN(part, "=", 2)
+		if len(kv) == 2 {
+			result[kv[0]] = kv[1]
+		}
+	}
+	return result
+}
+
 func (c *Client) QuerySMS() ([]SMS, error) {
 	cmd := exec.Command("adb", "shell", "content query --uri content://sms/inbox --projection _id:address:date:subscription_id:body")
 	output, err := cmd.CombinedOutput()
@@ -67,39 +102,19 @@ func (c *Client) QuerySMS() ([]SMS, error) {
 			continue
 		}
 
-		// Row: 0 _id=1, address=+123, date=123, subscription_id=1, body=Hello
-		// Fields are in the order we requested. body is last to make parsing easier!
+		parsed := parseContentRow(line, "body")
 		
-		sms := SMS{}
-		
-		idStart := strings.Index(line, "_id=")
-		if idStart == -1 { continue }
-		
-		addrStart := strings.Index(line, ", address=")
-		dateStart := strings.Index(line, ", date=")
-		subIdStart := strings.Index(line, ", subscription_id=")
-		bodyStart := strings.Index(line, ", body=")
-		
-		if addrStart != -1 {
-			sms.ID = line[idStart+4 : addrStart]
+		sms := SMS{
+			ID:      parsed["_id"],
+			Address: parsed["address"],
+			Date:    parsed["date"],
+			SubID:   parsed["subscription_id"],
+			Body:    parsed["body"],
 		}
 		
-		if dateStart != -1 && addrStart != -1 {
-			sms.Address = line[addrStart+10 : dateStart]
+		if sms.ID != "" {
+			messages = append(messages, sms)
 		}
-		
-		// some devices might not have subscription_id
-		if bodyStart != -1 {
-			if subIdStart != -1 {
-				sms.Date = line[dateStart+7 : subIdStart]
-				sms.SubID = line[subIdStart+18 : bodyStart]
-			} else {
-				sms.Date = line[dateStart+7 : bodyStart]
-			}
-			sms.Body = line[bodyStart+7:] // body is until the end of line
-		}
-		
-		messages = append(messages, sms)
 	}
 
 	return messages, nil
@@ -130,38 +145,20 @@ func (c *Client) QueryCalls() ([]Call, error) {
 			continue
 		}
 
-		// Row: 0 _id=1, number=+123, type=3, date=123, duration=0, subscription_id=1
-		call := Call{}
+		parsed := parseContentRow(line, "")
 		
-		idStart := strings.Index(line, "_id=")
-		if idStart == -1 { continue }
-		
-		numberStart := strings.Index(line, ", number=")
-		typeStart := strings.Index(line, ", type=")
-		dateStart := strings.Index(line, ", date=")
-		durationStart := strings.Index(line, ", duration=")
-		subIdStart := strings.Index(line, ", subscription_id=")
-		
-		if numberStart != -1 {
-			call.ID = line[idStart+4 : numberStart]
-		}
-		if typeStart != -1 && numberStart != -1 {
-			call.Number = line[numberStart+9 : typeStart]
-		}
-		if dateStart != -1 && typeStart != -1 {
-			call.Type = line[typeStart+7 : dateStart]
-		}
-		if durationStart != -1 && dateStart != -1 {
-			call.Date = line[dateStart+7 : durationStart]
-		}
-		if subIdStart != -1 && durationStart != -1 {
-			call.Duration = line[durationStart+10 : subIdStart]
-			call.SubID = line[subIdStart+18:] // until the end
-		} else if durationStart != -1 {
-			call.Duration = line[durationStart+10:]
+		call := Call{
+			ID:       parsed["_id"],
+			Number:   parsed["number"],
+			Type:     parsed["type"],
+			Date:     parsed["date"],
+			Duration: parsed["duration"],
+			SubID:    parsed["subscription_id"],
 		}
 		
-		calls = append(calls, call)
+		if call.ID != "" {
+			calls = append(calls, call)
+		}
 	}
 
 	return calls, nil
