@@ -3,6 +3,7 @@ package worker
 import (
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,15 +17,36 @@ type Poller struct {
 	db        *db.DB
 	bot       *bot.Bot
 	interval  time.Duration
+	simNames  map[string]string
 }
 
-func New(adbClient *adb.Client, database *db.DB, telegramBot *bot.Bot, interval time.Duration) *Poller {
+func New(adbClient *adb.Client, database *db.DB, telegramBot *bot.Bot, interval time.Duration, simNames map[string]string) *Poller {
 	return &Poller{
 		adbClient: adbClient,
 		db:        database,
 		bot:       telegramBot,
 		interval:  interval,
+		simNames:  simNames,
 	}
+}
+
+func parseDate(timestampMs string) string {
+	if timestampMs == "" {
+		return ""
+	}
+	ts, err := strconv.ParseInt(timestampMs, 10, 64)
+	if err != nil {
+		return timestampMs
+	}
+	t := time.UnixMilli(ts)
+	return t.Format("02.01.2006 15:04:05")
+}
+
+func (p *Poller) getSimName(subID string) string {
+	if name, ok := p.simNames[subID]; ok && name != "" {
+		return name
+	}
+	return subID
 }
 
 func (p *Poller) Start() {
@@ -82,7 +104,12 @@ func (p *Poller) pollSMS() {
 		if !processed {
 			simInfo := ""
 			if msg.SubID != "" {
-				simInfo = fmt.Sprintf("\n<b>SIM:</b> %s", msg.SubID)
+				simInfo = fmt.Sprintf("\n<b>SIM:</b> %s", p.getSimName(msg.SubID))
+			}
+			
+			dateInfo := ""
+			if parsedDate := parseDate(msg.Date); parsedDate != "" {
+				dateInfo = fmt.Sprintf("\n<b>Время:</b> %s", parsedDate)
 			}
 			
 			// Try to handle HTML special characters to avoid Telegram API errors
@@ -90,7 +117,7 @@ func (p *Poller) pollSMS() {
 			body = strings.ReplaceAll(body, ">", "&gt;")
 			body = strings.ReplaceAll(body, "&", "&amp;")
 
-			text := fmt.Sprintf("✉️ <b>Новое SMS!</b>\n<b>От:</b> %s%s\n\n%s", msg.Address, simInfo, body)
+			text := fmt.Sprintf("✉️ <b>Новое SMS!</b>\n<b>От:</b> %s%s%s\n\n%s", msg.Address, simInfo, dateInfo, body)
 			
 			if err := p.bot.SendMessage(text); err != nil {
 				log.Printf("Failed to send SMS to telegram: %v", err)
@@ -129,14 +156,19 @@ func (p *Poller) pollCalls() {
 		if !processed {
 			simInfo := ""
 			if call.SubID != "" {
-				simInfo = fmt.Sprintf("\n<b>SIM:</b> %s", call.SubID)
+				simInfo = fmt.Sprintf("\n<b>SIM:</b> %s", p.getSimName(call.SubID))
+			}
+
+			dateInfo := ""
+			if parsedDate := parseDate(call.Date); parsedDate != "" {
+				dateInfo = fmt.Sprintf("\n<b>Время:</b> %s", parsedDate)
 			}
 
 			var text string
 			if call.Type == "3" {
-				text = fmt.Sprintf("❌ <b>Пропущенный звонок</b>\n<b>От:</b> %s%s", call.Number, simInfo)
+				text = fmt.Sprintf("❌ <b>Пропущенный звонок</b>\n<b>От:</b> %s%s%s", call.Number, simInfo, dateInfo)
 			} else {
-				text = fmt.Sprintf("📞 <b>Входящий звонок</b>\n<b>От:</b> %s\n<b>Длительность:</b> %s сек%s", call.Number, call.Duration, simInfo)
+				text = fmt.Sprintf("📞 <b>Входящий звонок</b>\n<b>От:</b> %s\n<b>Длительность:</b> %s сек%s%s", call.Number, call.Duration, simInfo, dateInfo)
 			}
 
 			if err := p.bot.SendMessage(text); err != nil {
