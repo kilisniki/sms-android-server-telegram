@@ -40,7 +40,8 @@ cp .env.example .env
 
 4. Запустите контейнер:
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 ```
 
 5. **Авторизация телефона (Только в первый раз):**
