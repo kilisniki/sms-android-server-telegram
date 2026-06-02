@@ -153,16 +153,12 @@ func (c *Client) QuerySMS() ([]SMS, error) {
 		}
 	}
 
+	output = strings.ReplaceAll(output, "\r", "")
 	var messages []SMS
-	lines := strings.Split(output, "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "Row: ") {
-			continue
-		}
+	var currentRow strings.Builder
 
-		parsed := parseContentRow(line, "body")
-
+	processRow := func(rowStr string) {
+		parsed := parseContentRow(rowStr, "body")
 		sms := SMS{
 			ID:      parsed["_id"],
 			Address: parsed["address"],
@@ -176,6 +172,24 @@ func (c *Client) QuerySMS() ([]SMS, error) {
 		if sms.ID != "" {
 			messages = append(messages, sms)
 		}
+	}
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "Row: ") {
+			if currentRow.Len() > 0 {
+				processRow(currentRow.String())
+				currentRow.Reset()
+			}
+			currentRow.WriteString(line)
+		} else if currentRow.Len() > 0 {
+			// Continuation of the previous row (multiline body)
+			currentRow.WriteString("\n")
+			currentRow.WriteString(line)
+		}
+	}
+	if currentRow.Len() > 0 {
+		processRow(currentRow.String())
 	}
 
 	return messages, nil
